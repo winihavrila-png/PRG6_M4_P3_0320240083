@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Alert
+  Alert,
+  TextInput
 } from "react-native";
 
 import { MaterialIcons } from "@expo/vector-icons";
@@ -49,7 +50,11 @@ export default function Home() {
   // 3. STATE UNTUK JAM DIGITAL
   const [currentTime, setCurrentTime] = useState('Memuat jam...');
 
-  // LANGKAH 3: useEffect untuk Jam Real-time
+  // 4. STATE & REF UNTUK CATATAN (Baru)
+  const [note, setNote] = useState('');
+  const noteInputRef = useRef(null); // Membuat "kait" kosong untuk UI
+
+  // useEffect untuk Jam Real-time
   useEffect(() => {
     // Jalankan timer setiap 1000 milidetik (1 detik)
     const timer = setInterval(() => {
@@ -65,27 +70,43 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []); // Array kosong [] artinya jalankan hanya satu kali saat awal dibuka
 
-  // LANGKAH 4: Fungsi Logika Tombol Check-In
+  // 5. OPTIMASI KOMPUTASI DENGAN useMemo
+  const attendanceStats = useMemo(() => {
+    // Teks ini hanya akan tercetak di terminal HANYA jika historyData bertambah,
+    // BUKAN setiap detik saat jam berubah!
+    console.log("Menghitung ulang statistik kehadiran...");
+
+    const presentCount = historyData.filter((item) => item.status === 'Present').length;
+    const absentCount = historyData.filter((item) => item.status === 'Absent').length;
+
+    return { totalPresent: presentCount, totalAbsent: absentCount };
+  }, [historyData]); // <-- Dependencies: Hanya hitung ulang kalau 'historyData' berubah
+
+  // FUNGSI LOGIKA ABSEN (Diperbarui)
   const handleCheckIn = () => {
     if (isCheckedIn) {
-      Alert.alert("Perhatian", "Anda sudah melakukan Check In untuk kelas ini.");
+      Alert.alert('Perhatian', 'Anda sudah melakukan Check In.');
       return;
     }
 
-    // 1. Buat data presensi baru
+    // Validasi Catatan menggunakan useRef
+    if (note.trim() === '') {
+      Alert.alert('Peringatan', 'Catatan kehadiran wajib diisi!');
+      noteInputRef.current.focus(); // <-- Sihir useRef: Memaksa kursor pindah ke input
+      return;
+    }
+
     const newAttendance = {
-      id: Date.now().toString(), // Buat ID unik dari timestamp
+      id: Date.now().toString(),
       course: "Mobile Programming",
-      date: new Date().toLocaleDateString('id-ID'), // Tanggal hari ini
-      status: "Present"
+      date: new Date().toLocaleDateString('id-ID'),
+      status: "Present",
+      // Anda juga bisa menambahkan properti catatan ke objek jika ingin ditampilkan
     };
 
-    // 2. Masukkan data baru ke urutan paling atas daftar history
     setHistoryData(value => [newAttendance, ...value]);
-
-    // 3. Kunci tombol Check In
     setIsCheckedIn(true);
-    Alert.alert("Sukses", `Berhasil Check In pada pukul ${currentTime}`);
+    Alert.alert('Sukses', `Berhasil Check In pada pukul ${currentTime}`);
   };
 
   // renderItem sama seperti kode W2
@@ -116,9 +137,6 @@ export default function Home() {
     );
   };
 
-  const presentCount = historyData.filter(item => item.status === "Present").length;
-  const absentCount = historyData.filter(item => item.status === "Absent").length;
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView>
@@ -148,10 +166,21 @@ export default function Home() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Today's Class</Text>
           <Text>Mobile Programming</Text>
-          <Text>Room A203</Text>
-          <Text>10:00 AM</Text>
+          <Text>08:00 - 10:00</Text>
+          <Text>Lab 3</Text>
 
-          {/* Modifikasi Tombol Check In */}
+          {/* Fitur Baru: Kolom Input Catatan dengan useRef */}
+          {!isCheckedIn && (
+            <TextInput
+              ref={noteInputRef} // <-- Menempelkan referensi ke elemen ini
+              style={styles.inputCatatan}
+              placeholder="Tulis catatan (cth: Hadir lab)"
+              value={note}
+              onChangeText={setNote}
+            />
+          )}
+
+          {/* Tombol Check In */}
           <TouchableOpacity
             style={[styles.button, isCheckedIn ? styles.buttonDisabled : styles.buttonActive]}
             onPress={handleCheckIn}
@@ -163,27 +192,29 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {/* Upcoming Class */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Upcoming Class</Text>
-          <Text>Database Systems</Text>
-          <Text>Room B104</Text>
-          <Text>01:00 PM</Text>
+        {/* Fitur Baru: Statistik Kehadiran (Hasil useMemo) */}
+        <View style={styles.statsCard}>
+          <View style={styles.statBox}>
+            <Text style={styles.statNumber}>{attendanceStats.totalPresent}</Text>
+            <Text style={styles.statLabel}>Total Present</Text>
+          </View>
+          <View style={styles.statBox}>
+            <Text style={[styles.statNumber, { color: 'red' }]}>{attendanceStats.totalAbsent}</Text>
+            <Text style={styles.statLabel}>Total Absent</Text>
+          </View>
         </View>
 
         {/* Attendance History */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Attendance History</Text>
-          <Text>Present: {presentCount}</Text>
-          <Text>Absent: {absentCount}</Text>
-        </View>
 
-        <FlatList
-          data={historyData} // <-- Ubah 'initialHistory' menjadi 'historyData'
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          scrollEnabled={false}
-        />
+          <FlatList
+            data={historyData}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            scrollEnabled={false}
+          />
+        </View>
 
       </ScrollView>
     </SafeAreaView>
@@ -197,7 +228,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#0d3998",
   },
 
-  // Langkah 6: Tambahan styling baru
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -222,6 +252,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "bold",
     marginBottom: 20,
+    color: "white",
   },
   profileRow: {
     flexDirection: "row",
@@ -290,5 +321,35 @@ const styles = StyleSheet.create({
   status: {
     marginLeft: 5,
     fontWeight: "bold",
+  },
+
+  // Styling Baru (Langkah 6)
+  inputCatatan: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 15,
+    backgroundColor: '#fafafa',
+  },
+  statsCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: "white",
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 20,
+  },
+  statBox: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'green',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: 'gray',
   },
 });
