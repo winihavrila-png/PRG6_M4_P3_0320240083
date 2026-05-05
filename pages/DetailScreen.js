@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, SafeAreaView, StyleSheet } from 'react-native';
+import React from "react";
+import { View, Text, SafeAreaView, StyleSheet } from "react-native";
 
 export default function DetailScreen({ route }) {
   // Membongkar paket data yang dikirim dari HistoryScreen
@@ -17,19 +17,26 @@ export default function DetailScreen({ route }) {
 
         <View style={styles.row}>
           <Text style={styles.label}>Status:</Text>
-          <Text style={[styles.value, dataPresensi.status === 'Present' ? styles.present : styles.absent]}>
+          <Text
+            style={[
+              styles.value,
+              dataPresensi.status === "Present"
+                ? styles.present
+                : styles.absent
+            ]}
+          >
             {dataPresensi.status}
           </Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Ruangan:</Text>
-          <Text style={styles.value}>{dataPresensi.room}</Text>
+          <Text style={styles.value}>{dataPresensi.ruangan}</Text>
         </View>
 
         <View style={styles.row}>
           <Text style={styles.label}>Dosen Pengampu:</Text>
-          <Text style={styles.value}>{dataPresensi.lecturer}</Text>
+          <Text style={styles.value}>{dataPresensi.dosenPengampu}</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -37,28 +44,39 @@ export default function DetailScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 20 },
+  container: { flex: 1, backgroundColor: "#F5F5F5", padding: 20 },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: "white",
     padding: 20,
     borderRadius: 10,
-    elevation: 3,
+    elevation: 3
   },
   title: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: "#eee",
     paddingBottom: 15,
-    marginBottom: 15,
+    marginBottom: 15
   },
   row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12
   },
-  label: { fontSize: 16, color: 'gray' },
-  value: { fontSize: 16, fontWeight: 'bold', color: '#333' },
-  present: { color: 'green' },
-  absent: { color: 'red' },
+  label: { 
+    fontSize: 16, 
+    color: "gray" 
+},
+  value: { 
+    fontSize: 16, 
+    fontWeight: "bold", 
+    color: "#333"
+},
+  present: { 
+    color: "green" 
+},
+  absent: { 
+    color: "red" 
+}
 });
