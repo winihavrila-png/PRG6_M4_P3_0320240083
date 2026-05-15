@@ -34,7 +34,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={{ padding: 20 }}>
+     <View style={{ flex: 1, padding: 20, justifyContent: 'center' }}>
       <TextInput
         placeholder="NIM"
         value={nim}

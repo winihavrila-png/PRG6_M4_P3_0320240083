@@ -16,6 +16,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AuthContext } from '../context/AuthContext';
 
@@ -30,6 +31,13 @@ const HomeScreen = ({ navigation }) => {
   const [isPosting, setIsPosting] = useState(false);
   const noteInputRef = useRef(null);
 
+  // ── TAMBAHAN W7: State untuk QR Scanner ──────────────────────────────────
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scannedData, setScannedData] = useState(null);       // data hasil scan QR
+  const [isScanning, setIsScanning] = useState(true);         // kunci agar tidak scan berulang
+  const [showCamera, setShowCamera] = useState(false);        // toggle tampil kamera
+  // ─────────────────────────────────────────────────────────────────────────
+
   const attendanceStats = useMemo(() => {
     return { totalPresent: 12, totalAbsent: 2 };
   }, []);
@@ -41,28 +49,63 @@ const HomeScreen = ({ navigation }) => {
     return () => clearInterval(timer);
   }, []);
 
-  const handleCheckIn = async () => {
-    if (isCheckedIn) return Alert.alert("Perhatian", "Anda sudah Check In.");
-    if (note.trim() === '') {
-      Alert.alert("Peringatan", "Catatan kehadiran wajib diisi!");
-      noteInputRef.current.focus();
-      return;
+  // ── TAMBAHAN W7: Handler saat QR Code terdeteksi kamera ──────────────────
+  const handleBarCodeScanned = ({ type, data }) => {
+    // Jika sedang terkunci, abaikan scan agar tidak looping
+    if (!isScanning) return;
+
+    // Kunci scanner
+    setIsScanning(false);
+
+    try {
+      // Ubah teks JSON dari QR Code menjadi Objek JavaScript
+      const qrData = JSON.parse(data);
+      setScannedData(qrData);
+
+      Alert.alert(
+        "QR Code Terdeteksi",
+        `Mata Kuliah: ${qrData.kodeMk}\nPertemuan: ${qrData.pertemuanKe}\nRuangan: ${qrData.ruangan}\n\nLanjutkan Presensi (Check-In)?`,
+        [
+          {
+            text: "Batal",
+            onPress: () => {
+              // Reset jika batal
+              setIsScanning(true);
+              setScannedData(null);
+            },
+            style: "cancel"
+          },
+          {
+            text: "Ya, Check In",
+            // Lemparkan objek hasil parse ke fungsi submit
+            onPress: () => handleSubmitPresensi(qrData)
+          },
+        ]
+      );
+    } catch (error) {
+      // Handle jika QR Code yang di-scan bukan format JSON (misal salah scan QR Link biasa)
+      Alert.alert("QR Tidak Valid", "Pastikan Anda memindai QR Code Presensi Dosen.");
+      setIsScanning(true);
     }
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── TAMBAHAN W7: Fungsi kirim data ke API menggunakan data dari QR ────────
+  const handleSubmitPresensi = async (qrData) => {
+    if (isCheckedIn) return Alert.alert("Perhatian", "Anda sudah Check In.");
 
     setIsPosting(true);
-    const now = new Date();
+    setShowCamera(false);
 
+    // Payload dinamis mengambil nilai dari objek qrData
     const payload = {
-      kodeMk: "TRPL205",
-      course: "Mobile Programming",
+      kodeMk: qrData.kodeMk,
+      nimMhs: userData.mhsNim,         // Ambil NIM dari Context (login)
+      pertemuanKe: qrData.pertemuanKe,
+      date: new Date().toISOString().split('T')[0],
+      jamPresensi: new Date().toLocaleTimeString('en-GB'),
       status: "Present",
-      nimMhs: userData.mhsNim,
-      pertemuanKe: 5,
-      date: now.toISOString().split('T')[0],
-      jamPresensi: now.toLocaleTimeString('id-ID', { hour12: false }),
-      kode_qr: "AUTH-TRPL205-W5-XYZ987",
-      ruangan: "Lab Komputer 3",
-      dosenPengampu: "Tim Dosen TRPL"
+      ruangan: qrData.ruangan
     };
 
     try {
@@ -79,20 +122,107 @@ const HomeScreen = ({ navigation }) => {
 
       if (response.ok) {
         setIsCheckedIn(true);
-        Alert.alert("Berhasil!", "Presensi masuk ke Database Java Spring.", [
+        Alert.alert("Berhasil!", "Presensi sukses dicatat ke Database.", [
           { text: "Lihat Riwayat", onPress: () => navigation.navigate('HistoryTab') }
         ]);
       } else {
         Alert.alert("Gagal", result.message || "Terjadi kesalahan di server.");
       }
     } catch (error) {
-      Alert.alert("Error Jaringan", "Pastikan IP Laptop benar dan Spring Boot berjalan.");
+      Alert.alert("Error Jaringan", "Pastikan IP Laptop benar dan API berjalan.");
       console.error(error);
     } finally {
+      // Reset state agar siap untuk presensi selanjutnya
       setIsPosting(false);
+      setIsScanning(true);
+      setScannedData(null);
     }
   };
+  // ─────────────────────────────────────────────────────────────────────────
 
+  // ── TAMBAHAN W7: Handler buka kamera (cek permission dulu) ───────────────
+  const handleOpenCamera = async () => {
+    if (!permission || !permission.granted) {
+      await requestPermission();
+    }
+    setIsScanning(true);
+    setShowCamera(true);
+  };
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── TAMBAHAN W7: Render layar kamera fullscreen jika showCamera = true ───
+  if (showCamera) {
+    // Jika permission masih loading
+    if (!permission) {
+      return (
+        <View style={styles.container}>
+          <Text style={styles.infoText}>Memuat perizinan kamera...</Text>
+        </View>
+      );
+    }
+    // Jika user belum memberikan izin atau menolak
+    if (!permission.granted) {
+      return (
+        <View style={styles.container}>
+          <Text style={styles.infoText}>
+            Aplikasi butuh akses kamera untuk memindai QR Code Presensi Dosen!
+          </Text>
+          <TouchableOpacity style={styles.buttonRequest} onPress={requestPermission}>
+            <Text style={styles.buttonText}>Aktifkan Kamera</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // Render CameraView fullscreen dengan overlay kotak pemandu
+    return (
+      <View style={{ flex: 1, backgroundColor: 'black' }}>
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          onBarcodeScanned={isScanning ? handleBarCodeScanned : undefined}
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr"], // Batasi HANYA memindai QR Code agar lebih cepat
+          }}
+        >
+          {/* Desain Overlay Kotak Pemandu di tengah layar */}
+          <View style={styles.overlay}>
+            <View style={styles.unfocusedContainer} />
+            <View style={styles.focusedContainer}>
+              <View style={styles.borderCornerTopLeft} />
+              <View style={styles.borderCornerTopRight} />
+              <View style={styles.borderCornerBottomLeft} />
+              <View style={styles.borderCornerBottomRight} />
+            </View>
+            <View style={styles.unfocusedContainer}>
+              <Text style={styles.scanText}>Arahkan Kamera ke QR Code Dosen</Text>
+
+              {/* Tombol darurat jika scanner terkunci */}
+              {!isScanning && (
+                <TouchableOpacity
+                  style={[styles.buttonRequest, { marginTop: 12 }]}
+                  onPress={() => setIsScanning(true)}
+                >
+                  <Text style={styles.buttonText}>Scan Lagi</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Tombol kembali ke HomeScreen */}
+              <TouchableOpacity
+                style={[styles.buttonRequest, { marginTop: 12, backgroundColor: '#d9534f' }]}
+                onPress={() => setShowCamera(false)}
+              >
+                <Text style={styles.buttonText}>Batal / Kembali</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </CameraView>
+      </View>
+    );
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── UI UTAMA (struktur asli dipertahankan) ────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -125,29 +255,28 @@ const HomeScreen = ({ navigation }) => {
           <Text>08:00 - 10:00</Text>
           <Text>Lab 3</Text>
 
-          {!isCheckedIn && (
-            <TextInput
-              ref={noteInputRef}
-              style={styles.inputCatatan}
-              placeholder="Tulis catatan (cth: Hadir lab)"
-              value={note}
-              onChangeText={setNote}
-            />
-          )}
-
+          {/* ── TAMBAHAN W7: Tombol Scan QR & status Check In ── */}
           {isPosting ? (
             <ActivityIndicator size="large" color="#007AFF" style={{ marginTop: 15 }} />
+          ) : isCheckedIn ? (
+            <TouchableOpacity
+              style={[styles.button, styles.buttonDisabled]}
+              disabled={true}
+            >
+              <Text style={styles.buttonText}>✓ CHECKED IN</Text>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.button, isCheckedIn ? styles.buttonDisabled : styles.buttonActive]}
-              onPress={handleCheckIn}
-              disabled={isCheckedIn}
+              style={[styles.button, styles.buttonActive]}
+              onPress={handleOpenCamera}
             >
-              <Text style={styles.buttonText}>
-                {isCheckedIn ? "CHECKED IN" : "CHECK IN SEKARANG"}
+              <MaterialIcons name="qr-code-scanner" size={20} color="white" />
+              <Text style={[styles.buttonText, { marginLeft: 8 }]}>
+                SCAN QR CODE DOSEN
               </Text>
             </TouchableOpacity>
           )}
+          {/* ─────────────────────────────────────────────────── */}
         </View>
 
         {/* Stats Card */}
@@ -168,6 +297,7 @@ const HomeScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // ── Styles asli ───────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: '#F5F5F5' },
   content: { padding: 20 },
   headerRow: {
@@ -218,9 +348,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   button: {
+    flexDirection: 'row',
     padding: 14,
     borderRadius: 8,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 12,
   },
   buttonActive: { backgroundColor: '#0056A0' },
@@ -237,6 +369,63 @@ const styles = StyleSheet.create({
   statBox: { alignItems: 'center' },
   statNumber: { fontSize: 28, fontWeight: 'bold', color: '#0056A0' },
   statLabel: { fontSize: 13, color: '#666' },
+
+  // ── Styles TAMBAHAN W7: Scanner & Overlay ────────────────────────────────
+  infoText: {
+    color: 'white',
+    textAlign: 'center',
+    margin: 30,
+    fontSize: 16,
+  },
+  buttonRequest: {
+    backgroundColor: '#0056A0',
+    padding: 15,
+    borderRadius: 10,
+    alignSelf: 'center',
+  },
+  // Styling Overlay Scanner
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)', // Latar gelap transparan
+  },
+  unfocusedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  focusedContainer: {
+    width: 250,
+    height: 250,
+    alignSelf: 'center',
+    backgroundColor: 'transparent',
+    position: 'relative',
+  },
+  scanText: {
+    color: 'white',
+    fontSize: 16,
+    marginTop: 20,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    padding: 10,
+    borderRadius: 5,
+  },
+  // Membuat Sudut Kotak Biru
+  borderCornerTopLeft: {
+    position: 'absolute', top: 0, left: 0, width: 40, height: 40,
+    borderTopWidth: 5, borderLeftWidth: 5, borderColor: '#007bff',
+  },
+  borderCornerTopRight: {
+    position: 'absolute', top: 0, right: 0, width: 40, height: 40,
+    borderTopWidth: 5, borderRightWidth: 5, borderColor: '#007bff',
+  },
+  borderCornerBottomLeft: {
+    position: 'absolute', bottom: 0, left: 0, width: 40, height: 40,
+    borderBottomWidth: 5, borderLeftWidth: 5, borderColor: '#007bff',
+  },
+  borderCornerBottomRight: {
+    position: 'absolute', bottom: 0, right: 0, width: 40, height: 40,
+    borderBottomWidth: 5, borderRightWidth: 5, borderColor: '#007bff',
+  },
 });
 
 export default HomeScreen;
